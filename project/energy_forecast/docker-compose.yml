@@ -1,0 +1,65 @@
+version: "3.9"
+
+# Минимальный рабочий стек: inference + gateway.
+# Вспомогательный сервис training запускается по команде
+#   docker compose run --rm training
+# и кладёт артефакт модели в общий том model_store.
+
+services:
+  inference:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.inference
+    container_name: energy_inference
+    environment:
+      INFERENCE_PORT: "8001"
+      MODEL_PATH: "/models/model.pkl"
+    volumes:
+      - model_store:/models:ro
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+    networks:
+      - energy_net
+
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gateway
+    container_name: energy_gateway
+    environment:
+      GATEWAY_PORT: "8000"
+      INFERENCE_URL: "http://inference:8001"
+      CACHE_TTL_SEC: "300"
+      DB_PATH: "/var/lib/energy/app.db"
+    depends_on:
+      - inference
+    ports:
+      - "8000:8000"
+    volumes:
+      - user_db:/var/lib/energy
+    restart: unless-stopped
+    networks:
+      - energy_net
+
+  training:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.training
+    container_name: energy_training
+    environment:
+      MODELS_DIR: "/models"
+    volumes:
+      - model_store:/models
+    profiles:
+      - training
+    networks:
+      - energy_net
+
+volumes:
+  model_store:
+  user_db:
+
+networks:
+  energy_net:
+    driver: bridge
